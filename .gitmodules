@@ -1,0 +1,3 @@
+[submodule "stacks-project"]
+	path = stacks-project
+	url = https://github.com/stacks/stacks-project.git
