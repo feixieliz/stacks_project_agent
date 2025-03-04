@@ -1,13 +1,11 @@
+import pandas as pd
 import openai
-import sklearn
+from openai.types.chat import ChatCompletion
 from nltk.translate.bleu_score import sentence_bleu
 import random
 import time
 import inspect
 from typing import Callable
-import os
-from openai.types.chat import ChatCompletion
-import pandas as pd
 import dotenv
 
 dotenv.load_dotenv()
@@ -24,8 +22,7 @@ INSTRUCTION = """Hello, I have a task for you. The description of the task is as
 The function signature is as follows:
 {signature}
 
-T
-he arguments are as follows:
+The arguments are as follows:
 {arguments}
 
 Please implement this task in your mind and return the result to me immediately without anything in extra."""
@@ -80,7 +77,7 @@ def ai_agent(fn: Callable):
 
 @ai_agent
 def summarize(section: str):
-    """I want to summarize a section in a math textbook. The context is cut off but please do not imagine any extra beyond that. Just summarize with your best effort from whatever context you are given. Please return the results in bullet points."""
+    """I want to summarize a section in a math textbook. The context is cut off but please do not imagine any extra beyond that. Just summarize with your best effort from whatever context you are given in the argument `section`. Please return the results in bullet points."""
     ...
 
 
@@ -91,30 +88,30 @@ def make_a_plan(summary: str, theorem: str):
 
 
 @ai_agent
-def critique_a_proof(section: str, proof: str):
-    """I want to prove a theorem `theorem`, and I made a plan. Could you let me know what you think about my plan? Please critique my plan."""
+def critique_a_proof(theorem: str, plan: str):
+    """I want to prove a theorem given in the argument `theorem`, and I made a plan given in the argument `plan`. Could you let me know what you think about my plan? Please critique my plan."""
     ...
 
 
 @ai_agent
 def revise_plan(theorem: str, plan: str, critique: str):
-    """I want to prove a theorem `theorem`, and I made a plan. I thought about it for a while and here is my critique in the argument `critique`. Could you help me revise my plan? If everything is okay, you can simply repeat my original plan. But if there is something to improve, feel free to make changes."""
+    """I want to prove a theorem given in the argument `theorem`, and I made a plan given in the argument `plan`. I thought about it for a while and here is my critique in the argument `critique`. Could you help me revise my plan? If everything is okay, you can simply repeat my original plan. But if there is something to improve, feel free to make changes."""
     ...
 
 @ai_agent
-def write_a_proof(section: str, plan: str, theorem: str):
-    """I want to write a proof of a theorem. Before the theorem is stated, there are some previous texts. I will give you a summary in the argument `section`, the statement of the theorem in the argument `theorem`. I already made the plan in the argument `plan`. Please write a proof of the theorem. Please return the proof in markdown format."""
-    ...
-
-
-@ai_agent
-def write_a_latex_proof(section: str, plan: str, theorem: str):
-    """I want to write a proof of a theorem. Before the theorem is stated, there are some previous texts. I will give you a summary in the argument `section`, the statement of the theorem in the argument `theorem`. I already made the plan in the argument `plan`. Please write a proof of the theorem. Please return the proof in latex format."""
+def write_a_proof(summary: str, theorem: str, plan: str):
+    """I want to write a proof of a theorem. Before the theorem is stated, there are some previous texts. I will give you a summary in the argument `summary`, the statement of the theorem in the argument `theorem`. I already made the plan in the argument `plan`. Please write a proof of the theorem. Please return the proof in markdown format."""
     ...
 
 
 @ai_agent
-def latex_proof(proof: str, theorem: str):
+def write_a_latex_proof(summary: str, plan: str, theorem: str):
+    """I want to write a proof of a theorem. Before the theorem is stated, there are some previous texts. I will give you a summary in the argument `summary`, the statement of the theorem in the argument `theorem`. I already made the plan in the argument `plan`. Please write a proof of the theorem. Please return the proof in latex format."""
+    ...
+
+
+@ai_agent
+def convert_to_latex_proof(proof: str, theorem: str):
     """You are a full-professor in mathematics in MIT and very good at writing graduate-level textbooks in latex format. I have written a proof in markdown format. Could you help me convert it into LaTeX format? I include the proof in the argument `proof` and the statement of the theorem in the argument `theorem`."""
     ...
 
@@ -130,47 +127,42 @@ def main():
     df = pd.read_parquet("all_proofs_processed.parquet")
 
     sep = "=" * 50
+    num_samples = 1
 
-    for i in range(1):
+    for i in range(num_samples):
         idx = random.randint(0, len(df) - 1)
+        statement = df.iloc[idx]["statement"]
+
+        print(f"Statement: {statement}")
         summary = summarize(df.iloc[idx]["previous_section"])
+        print(sep)
         print(f"Summary: {summary}")
-        plan = make_a_plan(summary, df.iloc[idx]["statement"])
+        plan = make_a_plan(summary, statement)
         print(sep)
         print(f"Plan: {plan}")
-        critique = critique_a_proof(df.iloc[idx]["previous_section"], plan)
+        critique = critique_a_proof(statement, plan)
         print(sep)
         print(f"Critique: {critique}")
-        revised_plan = revise_plan(df.iloc[idx]["previous_section"], plan, critique)
+        revised_plan = revise_plan(statement, plan, critique)
         print(sep)
         print(f"Revised Plan: {revised_plan}")
-        #proof = write_a_proof(df.iloc[idx]["previous_section"], revised_plan, df.iloc[idx]["statement"])
-        #print(sep)
-        #print(f"Proof: {proof}")
-        #latex = latex_proof(proof, df.iloc[idx]["statement"])
-        #print(sep)
-        #print(f"LaTeX Proof: {latex}")
-
-        proof = write_a_latex_proof(df.iloc[idx]["previous_section"], revised_plan, df.iloc[idx]["statement"])
+        proof = write_a_proof(summary, revised_plan, statement)
         print(sep)
         print(f"Proof: {proof}")
+        latex_proof = write_a_latex_proof(summary, revised_plan, statement)
+        print(sep)
+        print(f"Latex Proof: {latex_proof}")
 
         # Calculate BLEU score with the groundtruth proof
         # TODO: Potentially, we can do rejection sampling over different plans, and select the one with the highest BLEU score
         groundtruth = df.iloc[idx]["proof"]
         # TODO: We can also use ROUGE score. Or other better metrics?
-        print("BLEU score:", sentence_bleu([groundtruth.split()], proof.split()))
+        print("BLEU score:", sentence_bleu([groundtruth.split()], latex_proof.split()))
 
-
-        formal_proof = formalize_a_proof(proof, df.iloc[idx]["statement"])
+        formal_proof = formalize_a_proof(proof, statement)
         # TODO: Hook up with LEAN 4 engine to actually check the proof
-
         print(sep)
         print(f"Formal Proof: {formal_proof}")
-
-
-
-
 
 
 if __name__ == "__main__":
